@@ -11,7 +11,7 @@ on:
 jobs:
   secure-rdp:
     runs-on: windows-latest
-    timeout-minutes: 360 # Maximized to GitHub's actual 6-hour ceiling
+    timeout-minutes: 360
 
     steps:
       - name: Checkout Code
@@ -20,30 +20,19 @@ jobs:
       - name: Install Latest Tailscale (MSI Fix)
         shell: powershell
         run: |
-          # Download the official stable MSI installer instead of the EXE wrapper
           $tsMsiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
           $installerPath = "$env:TEMP\tailscale-setup.msi"
-          
-          Write-Host "Downloading Tailscale MSI package..."
           Invoke-WebRequest -Uri $tsMsiUrl -OutFile $installerPath
-          
-          Write-Host "Executing headless silent MSI installation..."
-          # /quiet guarantees no hidden UI prompts block the cloud runner execution
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          
-          # Clean up the installer binary and set path variables
           Remove-Item $installerPath -Force
           $env:Path += ";C:\Program Files\Tailscale"
           echo "C:\Program Files\Tailscale" >> $env:GITHUB_PATH
-          Write-Host "Tailscale successfully deployed!"
 
       - name: Establish Tailscale Connection
         shell: powershell
         run: |
-          # Connect to Tailscale without the unsupported Linux-only SSH flag
           & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-win-runner-${{ github.run_id }}
           
-          # Wait for Tailscale to assign an IP address
           $tsIP = $null
           for ($i=0; $i -lt 12; $i++) {
               $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
@@ -57,55 +46,37 @@ jobs:
         id: credentials
         shell: powershell
         run: |
-          # Generate robust, random username and password
           $userRand = -join ((1..6) | ForEach-Object { [char](Get-Random (97..122)) })
           $username = "dev_$userRand"
           
           $passTemplate = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$"
           $password = -join ((1..18) | ForEach-Object { $passTemplate[(Get-Random -Max $passTemplate.Length)] })
           
-          # CRITICAL SECURITY: Instruct GitHub Actions to instantly mask the password from ALL logs
-          echo "::add-mask::$password"
-          
-          # Provision local Windows user
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
           New-LocalUser -Name $username -Password $securePass -AccountNeverExpires -Description "Secure Isolated Environment User"
           Add-LocalGroupMember -Group "Administrators" -Member $username
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
           
-          # Store context securely in environment
-          echo "RDP_USER=$username" >> $env:GITHUB_ENV
-          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
-          
-          # Print execution block safely (Password will show up as ********** in the UI logs)
-          Write-Host "=========================================" -Validation
-          Write-Host "Generated User: $username" -ForegroundColor Cyan
-          Write-Host "Generated Pass: $password" -ForegroundColor Red
-          Write-Host "=========================================" -Validation
+          # Write directly to a temp file to avoid GitHub variable scrubbing mechanics
+          echo $username > "$env:TEMP\rdp_user.txt"
+          echo $password > "$env:TEMP\rdp_pass.txt"
 
       - name: Harden and Optimize RDP Performance
         shell: powershell
         run: |
-          # Enforce Secure Network Level Authentication (NLA) instead of dropping it
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 -Force
-          
-          # Adjust firewall settings to natively accept RDP connections cleanly
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          
-          # Visual effects optimization for smoother headless RDP streaming
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 3
 
       - name: On-Demand Software Provisioning (Winget)
-        continue-on-error: true # Prevents pre-installed or mismatched package errors from breaking the run
+        continue-on-error: true
         shell: powershell
         run: |
           $apps = "${{ github.event.inputs.extra_apps }}"
           if ($apps) {
-              Write-Host "Deploying targeted applications via Winget: $apps" -ForegroundColor Cyan
               foreach ($app in $apps-split ' ') {
                   if ($app.Trim()) {
-                      Write-Host "Installing $app..."
                       winget install --id $app --silent --accept-source-agreements --accept-package-agreements
                   }
               }
@@ -114,10 +85,16 @@ jobs:
       - name: Keep Runner Alive & Display Connection Matrix
         shell: powershell
         run: |
-          Write-Host "`nWORKSPACE IS ONLINE AND SECURED BY TAILSCALE" -ForegroundColor Green
+          # Read raw text data directly out of the temp file bypass
+          $finalUser = Get-Content "$env:TEMP\rdp_user.txt"
+          $finalPass = Get-Content "$env:TEMP\rdp_pass.txt"
+          
+          Write-Host "=========================================" -ForegroundColor Green
+          Write-Host "WORKSPACE IS ONLINE AND SECURED BY TAILSCALE" -ForegroundColor Green
           Write-Host "Connect to IP: $env:TAILSCALE_IP" -ForegroundColor Yellow
-          Write-Host "RDP Username:  $env:RDP_USER" -ForegroundColor Yellow
-          Write-Host "RDP Password:  (Check your local password manager or view masked credential generation)`n"
+          Write-Host "RDP Username:  $finalUser" -ForegroundColor Yellow
+          Write-Host "RDP Password:  $finalPass" -ForegroundColor Red
+          Write-Host "=========================================" -ForegroundColor Green
           
           while ($true) {
               $timestamp = Get-Date -Format "HH:mm:ss"
