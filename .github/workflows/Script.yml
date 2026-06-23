@@ -79,8 +79,8 @@ jobs:
           
           # Print execution block safely (Password will show up as ********** in the UI logs)
           Write-Host "=========================================" -ForegroundColor Green
-          Write-Host "👤 Generated User: $username" -ForegroundColor Cyan
-          Write-Host "🔑 Generated Pass: $password" -ForegroundColor Red
+          Write-Host "Generated User: $username" -ForegroundColor Cyan
+          Write-Host "Generated Pass: $password" -ForegroundColor Red
           Write-Host "=========================================" -ForegroundColor Green
 
       - name: Harden and Optimize RDP Performance
@@ -113,33 +113,10 @@ jobs:
       - name: Keep Runner Alive & Display Connection Matrix
         shell: powershell
         run: |
-          Write-Host "`n🚀 WORKSPACE IS ONLINE AND SECURED BY TAILSCALE" -ForegroundColor Green
-          Write-Host "📍 Connect to IP: $env:TAILSCALE_IP" -ForegroundColor Yellow
-          Write-Host "👤 RDP Username:  $env:RDP_USER" -ForegroundColor Yellow
-          Write-Host "🔑 RDP Password:  (Check your local password manager or view masked credential generation)`n"
-          
-          while ($true) {
-              $timestamp = Get-Date -Format "HH:mm:ss"
-              Write-Host "[$timestamp] Sandbox running smoothly. Session active..."
-              Start-Sleep -Seconds 180
-          }
-              Write-Host "Deploying targeted applications via Winget: $apps" -ForegroundColor Cyan
-              foreach ($app in $apps-split ' ') {
-                  if ($app.Trim()) {
-                      Write-Host "Installing $app..."
-                      winget install --id $app --silent --accept-source-agreements --accept-package-agreements
-                  }
-              }
-          }
-
-      - name: Keep Runner Alive & Display Connection Matrix
-        shell: powershell
-        run: |
-          Write-Host "`n🚀 WORKSPACE IS ONLINE AND SECURED BY TAILSCALE" -ForegroundColor Green
-          Write-Host "📍 Connect to IP: $env:TAILSCALE_IP" -ForegroundColor Yellow
-          Write-Host "👤 RDP Username:  $env:RDP_USER" -ForegroundColor Yellow
-          Write-Host "🔑 RDP Password:  (Check your local password manager or view masked credential generation)"
-          Write-Host "🐚 Tailscale SSH: Enabled. Run 'tailscale ssh $env:RDP_USER@gh-win-runner-${{ github.run_id }}' from your terminal.`n"
+          Write-Host "`nWORKSPACE IS ONLINE AND SECURED BY TAILSCALE" -ForegroundColor Green
+          Write-Host "Connect to IP: $env:TAILSCALE_IP" -ForegroundColor Yellow
+          Write-Host "RDP Username:  $env:RDP_USER" -ForegroundColor Yellow
+          Write-Host "RDP Password:  (Check your local password manager or view masked credential generation)`n"
           
           while ($true) {
               $timestamp = Get-Date -Format "HH:mm:ss"
