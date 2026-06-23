@@ -78,10 +78,10 @@ jobs:
           echo "RDP_PASS=$password" >> $env:GITHUB_ENV
           
           # Print execution block safely (Password will show up as ********** in the UI logs)
-          Write-Host "=========================================" -ForegroundColor Green
+          Write-Host "=========================================" -Validation
           Write-Host "Generated User: $username" -ForegroundColor Cyan
           Write-Host "Generated Pass: $password" -ForegroundColor Red
-          Write-Host "=========================================" -ForegroundColor Green
+          Write-Host "=========================================" -Validation
 
       - name: Harden and Optimize RDP Performance
         shell: powershell
@@ -97,6 +97,7 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "MinEncryptionLevel" -Value 3
 
       - name: On-Demand Software Provisioning (Winget)
+        continue-on-error: true # Prevents pre-installed or mismatched package errors from breaking the run
         shell: powershell
         run: |
           $apps = "${{ github.event.inputs.extra_apps }}"
