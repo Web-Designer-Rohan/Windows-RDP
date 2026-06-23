@@ -1,4 +1,4 @@
-name: Overpowered Windows Workspace (RDP + SSH)
+³name: Overpowered Windows Workspace (RDP + SSH)
 
 on:
   workflow_dispatch:
@@ -38,12 +38,13 @@ jobs:
           Write-Host "Tailscale successfully deployed!"
 
 
-      - name: Establish Tailscale Connection & Enable SSH
+      - name: Establish Tailscale Connection
         shell: powershell
         run: |
-          # Connect to Tailscale and explicitly spin up Tailscale SSH capability
-          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-win-runner-${{ github.run_id }} --ssh
+          # Connect to Tailscale without the unsupported Linux-only SSH flag
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-win-runner-${{ github.run_id }}
           
+          # Wait for Tailscale to assign an IP address
           $tsIP = $null
           for ($i=0; $i -lt 12; $i++) {
               $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
