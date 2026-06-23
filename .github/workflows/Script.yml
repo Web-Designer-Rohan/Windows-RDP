@@ -1,4 +1,4 @@
-³name: Overpowered Windows Workspace (RDP + SSH)
+name: Overpowered Windows Workspace (RDP)
 
 on:
   workflow_dispatch:
@@ -36,7 +36,6 @@ jobs:
           $env:Path += ";C:\Program Files\Tailscale"
           echo "C:\Program Files\Tailscale" >> $env:GITHUB_PATH
           Write-Host "Tailscale successfully deployed!"
-
 
       - name: Establish Tailscale Connection
         shell: powershell
@@ -102,6 +101,28 @@ jobs:
         run: |
           $apps = "${{ github.event.inputs.extra_apps }}"
           if ($apps) {
+              Write-Host "Deploying targeted applications via Winget: $apps" -ForegroundColor Cyan
+              foreach ($app in $apps-split ' ') {
+                  if ($app.Trim()) {
+                      Write-Host "Installing $app..."
+                      winget install --id $app --silent --accept-source-agreements --accept-package-agreements
+                  }
+              }
+          }
+
+      - name: Keep Runner Alive & Display Connection Matrix
+        shell: powershell
+        run: |
+          Write-Host "`n🚀 WORKSPACE IS ONLINE AND SECURED BY TAILSCALE" -ForegroundColor Green
+          Write-Host "📍 Connect to IP: $env:TAILSCALE_IP" -ForegroundColor Yellow
+          Write-Host "👤 RDP Username:  $env:RDP_USER" -ForegroundColor Yellow
+          Write-Host "🔑 RDP Password:  (Check your local password manager or view masked credential generation)`n"
+          
+          while ($true) {
+              $timestamp = Get-Date -Format "HH:mm:ss"
+              Write-Host "[$timestamp] Sandbox running smoothly. Session active..."
+              Start-Sleep -Seconds 180
+          }
               Write-Host "Deploying targeted applications via Winget: $apps" -ForegroundColor Cyan
               foreach ($app in $apps-split ' ') {
                   if ($app.Trim()) {
