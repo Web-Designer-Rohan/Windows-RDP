@@ -1,0 +1,133 @@
+name: Overpowered Windows Workspace (RDP)
+
+on:
+  workflow_dispatch:
+    inputs:
+      extra_apps:
+        description: 'Space-separated Winget IDs to pre-install (e.g., Git.Git NodeJs)'
+        required: false
+        default: 'Git.Git'
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Latest Tailscale (MSI Fix)
+        shell: powershell
+        run: |
+          $tsMsiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale-setup.msi"
+          Invoke-WebRequest -Uri $tsMsiUrl -OutFile $installerPath
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installerPath -Force
+          $env:Path += ";C:\Program Files\Tailscale"
+          echo "C:\Program Files\Tailscale" >> $env:GITHUB_PATH
+
+      - name: Establish Tailscale Connection
+        shell: powershell
+        run: |
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-win-runner-${{ github.run_id }}
+          
+          $tsIP = $null
+          for ($i=0; $i -lt 12; $i++) {
+              $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+              if ($tsIP) { break }
+              Start-Sleep -Seconds 5
+          }
+          if (-not $tsIP) { throw "Tailscale IP allocation timed out." }
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+
+      - name: Create Highly Secure Dynamic Credentials
+        id: credentials
+        shell: powershell
+        run: |
+          $userRand = -join ((1..6) | ForEach-Object { [char](Get-Random (97..122)) })
+          $username = "dev_$userRand"
+          
+          $passTemplate = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$"
+          $password = -join ((1..18) | ForEach-Object { $passTemplate[(Get-Random -Max $passTemplate.Length)] })
+          
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name $username -Password $securePass -AccountNeverExpires -Description "Secure Isolated Environment User"
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          
+          echo $username > "$env:TEMP\rdp_user.txt"
+          echo $password > "$env:TEMP\rdp_pass.txt"
+
+      - name: Anti-VM Bypasses & Extreme Performance Tuning
+        shell: powershell
+        run: |
+          Write-Host "Executing Anti-VM Registry Spoofing..." -ForegroundColor Cyan
+          New-Item -Path "HKLM:\HARDWARE\DESCRIPTION\System" -Force -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System" -Name "SystemBiosVersion" -Value "ALASKA - 1072009" -Force
+          Set-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System" -Name "VideoBiosVersion" -Value "NVIDIA Version 94.02.42.00.01" -Force
+          Set-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System\BIOS" -Name "SystemManufacturer" -Value "ASUSTeK COMPUTER INC." -Force
+          Set-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System\BIOS" -Name "SystemProductName" -Value "ROG STRIX Z790-E GAMING WIFI" -Force
+
+          Write-Host "Killing Heavy Background Services..." -ForegroundColor Cyan
+          Set-Service -Name "WSearch" -StartupType Disabled -ErrorAction SilentlyContinue
+          Stop-Service -Name "WSearch" -Force -ErrorAction SilentlyContinue
+          
+          Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" -Name "LoadAppInit_DLLs" -Value 0 -Force
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" -Name "Win32PrioritySeparation" -Value 26 -Force
+
+      - name: Headless Silent Bloatware Removal Orchestration
+        continue-on-error: true
+        shell: powershell
+        run: |
+          Write-Host "Downloading silent system customization framework..." -ForegroundColor Cyan
+          # Fetching the automated debloat utility parameters directly into memory execution
+          $debloatScript = Invoke-RestMethod -Uri "https://debloat.raphi.re/"
+          
+          Write-Host "Executing silent bloatware removal and background telemetry purge..." -ForegroundColor Cyan
+          # Execute the configuration script block with silent parameters to skip interactive prompts
+          Invoke-Command -ScriptBlock ([scriptblock]::Create($debloatScript)) -ArgumentList "-Silent", "-RemoveApps", "-DisableTelemetry", "-DisableCloud"
+          Write-Host "System optimization sequence finished." -ForegroundColor Green
+
+      - name: Harden and Optimize RDP Performance
+        shell: powershell
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          
+          New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" -Force -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" -Name "DWMFRAMEINTERVAL" -Value 15 -Force
+
+      - name: On-Demand Software Provisioning (Winget)
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $apps = "${{ github.event.inputs.extra_apps }}"
+          if ($apps) {
+              foreach ($app in $apps-split ' ') {
+                  if ($app.Trim()) {
+                      winget install --id $app --silent --accept-source-agreements --accept-package-agreements
+                  }
+              }
+          }
+
+      - name: Keep Runner Alive & Display Connection Matrix
+        shell: powershell
+        run: |
+          $finalUser = Get-Content "$env:TEMP\rdp_user.txt"
+          $finalPass = Get-Content "$env:TEMP\rdp_pass.txt"
+          
+          Write-Host "=========================================" -ForegroundColor Green
+          Write-Host "WORKSPACE IS ONLINE AND SECURED BY TAILSCALE" -ForegroundColor Green
+          Write-Host "Connect to IP: $env:TAILSCALE_IP" -ForegroundColor Yellow
+          Write-Host "RDP Username:  $finalUser" -ForegroundColor Yellow
+          Write-Host "RDP Password:  $finalPass" -ForegroundColor Red
+          Write-Host "=========================================" -ForegroundColor Green
+          
+          while ($true) {
+              $timestamp = Get-Date -Format "HH:mm:ss"
+              Write-Host "[$timestamp] Sandbox running smoothly. Session active..."
+              Start-Sleep -Seconds 180
+          }
