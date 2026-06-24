@@ -64,7 +64,12 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Executing Anti-VM Registry Spoofing..." -ForegroundColor Cyan
+          
+          # Explicitly force-create missing registry paths if they do not exist natively
           New-Item -Path "HKLM:\HARDWARE\DESCRIPTION\System" -Force -ErrorAction SilentlyContinue
+          New-Item -Path "HKLM:\HARDWARE\DESCRIPTION\System\BIOS" -Force -ErrorAction SilentlyContinue
+          
+          # Spoof System BIOS and Hardware details to mask Hyper-V / Azure signatures
           Set-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System" -Name "SystemBiosVersion" -Value "ALASKA - 1072009" -Force
           Set-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System" -Name "VideoBiosVersion" -Value "NVIDIA Version 94.02.42.00.01" -Force
           Set-ItemProperty -Path "HKLM:\HARDWARE\DESCRIPTION\System\BIOS" -Name "SystemManufacturer" -Value "ASUSTeK COMPUTER INC." -Force
@@ -82,52 +87,6 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Downloading silent system customization framework..." -ForegroundColor Cyan
-          # Fetching the automated debloat utility parameters directly into memory execution
           $debloatScript = Invoke-RestMethod -Uri "https://debloat.raphi.re/"
           
-          Write-Host "Executing silent bloatware removal and background telemetry purge..." -ForegroundColor Cyan
-          # Execute the configuration script block with silent parameters to skip interactive prompts
-          Invoke-Command -ScriptBlock ([scriptblock]::Create($debloatScript)) -ArgumentList "-Silent", "-RemoveApps", "-DisableTelemetry", "-DisableCloud"
-          Write-Host "System optimization sequence finished." -ForegroundColor Green
-
-      - name: Harden and Optimize RDP Performance
-        shell: powershell
-        run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 -Force
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          
-          New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" -Force -ErrorAction SilentlyContinue
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations" -Name "DWMFRAMEINTERVAL" -Value 15 -Force
-
-      - name: On-Demand Software Provisioning (Winget)
-        continue-on-error: true
-        shell: powershell
-        run: |
-          $apps = "${{ github.event.inputs.extra_apps }}"
-          if ($apps) {
-              foreach ($app in $apps-split ' ') {
-                  if ($app.Trim()) {
-                      winget install --id $app --silent --accept-source-agreements --accept-package-agreements
-                  }
-              }
-          }
-
-      - name: Keep Runner Alive & Display Connection Matrix
-        shell: powershell
-        run: |
-          $finalUser = Get-Content "$env:TEMP\rdp_user.txt"
-          $finalPass = Get-Content "$env:TEMP\rdp_pass.txt"
-          
-          Write-Host "=========================================" -ForegroundColor Green
-          Write-Host "WORKSPACE IS ONLINE AND SECURED BY TAILSCALE" -ForegroundColor Green
-          Write-Host "Connect to IP: $env:TAILSCALE_IP" -ForegroundColor Yellow
-          Write-Host "RDP Username:  $finalUser" -ForegroundColor Yellow
-          Write-Host "RDP Password:  $finalPass" -ForegroundColor Red
-          Write-Host "=========================================" -ForegroundColor Green
-          
-          while ($true) {
-              $timestamp = Get-Date -Format "HH:mm:ss"
-              Write-Host "[$timestamp] Sandbox running smoothly. Session active..."
-              Start-Sleep -Seconds 180
-          }
+          Write-Host "Executing silent bloatware removal and background telemetry purge..."
