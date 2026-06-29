@@ -1,66 +1,50 @@
-name: Overpowered Windows Workspace (RDP)
+name: Windows RDP Workspace
 
 on:
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
+  rdp-runner:
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 360 # 6-hour limit
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install Latest Tailscale
+      - name: Install Tailscale
         shell: powershell
         run: |
-          $tsMsiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
-          $installerPath = "$env:TEMP\tailscale-setup.msi"
-          Invoke-WebRequest -Uri $tsMsiUrl -OutFile $installerPath
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          Remove-Item $installerPath -Force
+          $installer = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile $installer
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installer`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installer -Force
 
-      - name: Establish Tailscale Connection
+      - name: Connect Tailscale
         shell: powershell
         run: |
-          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-win-runner-${{ github.run_id }}
-          $tsIP = $null
-          for ($i=0; $i -lt 12; $i++) {
-              $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-              if ($tsIP) { break }
-              Start-Sleep -Seconds 5
-          }
-          if (-not $tsIP) { throw "Tailscale IP allocation timed out." }
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-win-runner
+          $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
 
-      - name: Create Dynamic Credentials
+      - name: Enable RDP
         shell: powershell
         run: |
-          $username = "dev_user"
-          $password = "P@ssword123!" 
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member $username
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
-          echo $username > "$env:TEMP\rdp_user.txt"
-          echo $password > "$env:TEMP\rdp_pass.txt"
-
-      - name: Harden and Allow RDP (NLA Disabled for Compatibility)
-        shell: powershell
-        run: |
-          # Enable RDP
+          # Enable Remote Desktop
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          # DISABLE NLA for better mobile compatibility (0 = disabled)
+          # Disable Network Level Authentication (improves Android/mobile compatibility)
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          
-          # Force Firewall Allow
-          New-NetSecurityRule -DisplayName "Allow-All-RDP" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 3389 -Profile Any
-          
-          Restart-Service -Name "TermService" -Force
+          # Open Firewall for RDP
+          netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
+
+      - name: Set Credentials
+        shell: powershell
+        run: |
+          $user = "rdpuser"
+          $pass = "SecurePass123!" # Change this!
+          net user $user $pass /add
+          net localgroup administrators $user /add
+          echo "User: $user | Password: $pass"
 
       - name: Keep Alive
         shell: powershell
         run: |
-          Write-Host "IP: $env:TAILSCALE_IP | User: dev_user | Pass: P@ssword123!"
+          Write-Host "Connect to RDP at: $env:TAILSCALE_IP"
           while ($true) { Start-Sleep -Seconds 300 }
