@@ -1,4 +1,4 @@
-name: Windows RDP Workspace
+name: Windows RDP Workspace (Optimized)
 
 on:
   workflow_dispatch:
@@ -23,33 +23,40 @@ jobs:
           & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-win-runner
           $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
           echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
-          Write-Host "Tailscale connected. IP: $ip"
+
+      - name: Aggressive RAM/OS Optimization ("Tiny11-Mode")
+        shell: powershell
+        run: |
+          # 1. Disable high-memory background services
+          $services = @("WSearch", "DiagTrack", "dmwappushservice", "SysMain", "MapsBroker")
+          foreach ($s in $services) {
+            Stop-Service -Name $s -Force -ErrorAction SilentlyContinue
+            Set-Service -Name $s -StartupType Disabled -ErrorAction SilentlyContinue
+          }
+          
+          # 2. Disable UI visual effects to save RAM/GPU load
+          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name "MenuShowDelay" -Value 0
+          Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name "VisualFXSetting" -Value 2
+
+          # 3. Clear Temp folders to reclaim disk/memory space
+          Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Enable RDP & Credentials
         shell: powershell
         run: |
-          # Enable RDP
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          # Disable NLA
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          # Open Firewall
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
           
-          # Setup User
           $user = "rdpuser"
           $pass = "SecurePass123!"
           net user $user $pass /add
           net localgroup administrators $user /add
-          
-          # Restart Services
           Restart-Service -Name "TermService" -Force
 
       - name: Keep Alive Loop
         shell: powershell
         run: |
-          Write-Host "=========================================="
-          Write-Host "RDP is ready. Connect via Tailscale IP: $env:TAILSCALE_IP"
-          Write-Host "User: rdpuser | Pass: SecurePass123!"
-          Write-Host "=========================================="
-          # Infinite sleep to keep the runner alive
+          Write-Host "RDP Ready at IP: $env:TAILSCALE_IP"
           while ($true) { Start-Sleep -Seconds 60 }
