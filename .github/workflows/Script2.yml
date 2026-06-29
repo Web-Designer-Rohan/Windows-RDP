@@ -6,7 +6,7 @@ on:
 jobs:
   rdp-runner:
     runs-on: windows-latest
-    timeout-minutes: 360 # 6-hour limit
+    timeout-minutes: 360
 
     steps:
       - name: Install Tailscale
@@ -23,28 +23,33 @@ jobs:
           & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-win-runner
           $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
           echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+          Write-Host "Tailscale connected. IP: $ip"
 
-      - name: Enable RDP
+      - name: Enable RDP & Credentials
         shell: powershell
         run: |
-          # Enable Remote Desktop
+          # Enable RDP
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          # Disable Network Level Authentication (improves Android/mobile compatibility)
+          # Disable NLA
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          # Open Firewall for RDP
+          # Open Firewall
           netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
-
-      - name: Set Credentials
-        shell: powershell
-        run: |
+          
+          # Setup User
           $user = "rdpuser"
-          $pass = "SecurePass123!" # Change this!
+          $pass = "SecurePass123!"
           net user $user $pass /add
           net localgroup administrators $user /add
-          echo "User: $user | Password: $pass"
+          
+          # Restart Services
+          Restart-Service -Name "TermService" -Force
 
-      - name: Keep Alive
+      - name: Keep Alive Loop
         shell: powershell
         run: |
-          Write-Host "Connect to RDP at: $env:TAILSCALE_IP"
-          while ($true) { Start-Sleep -Seconds 300 }
+          Write-Host "=========================================="
+          Write-Host "RDP is ready. Connect via Tailscale IP: $env:TAILSCALE_IP"
+          Write-Host "User: rdpuser | Pass: SecurePass123!"
+          Write-Host "=========================================="
+          # Infinite sleep to keep the runner alive
+          while ($true) { Start-Sleep -Seconds 60 }
